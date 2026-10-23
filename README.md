@@ -1,0 +1,149 @@
+# TaskPet - Backend (Avance Sesión 6)
+
+**Asignatura:** Ingeniería de Software III - Universidad INCCA de Colombia
+**Estudiante:** Andry Gisella Buitrago García
+**Docente:** Ing. Andrés Eduardo Rivera Gómez
+
+## Descripción del proyecto y de la entidad elegida
+
+**TaskPet (PetCare Solutions)** es una aplicación web para el control centralizado del cuidado de mascotas: vacunas, controles veterinarios, citas, stock de alimento y gastos. Resuelve el problema de dueños que llevan esta información en papeles o de memoria y olvidan fechas críticas de salud.
+
+La **entidad principal de este avance es `Mascota`**, porque todos los demás módulos (vacunas, citas, alimentación) dependerán de ella. Campos:
+
+| Campo | Tipo | Regla de negocio |
+|---|---|---|
+| id | entero | autogenerado |
+| nombre | texto | obligatorio, 2 a 50 caracteres |
+| especie | texto | obligatoria: perro, gato, ave, conejo, hamster, pez, reptil u otro |
+| raza | texto | opcional, máximo 50 caracteres |
+| fecha_nacimiento | AAAA-MM-DD | opcional, válida y no futura |
+| peso_kg | número | opcional, mayor a 0 y máximo 200 |
+| creado_en | fecha/hora | autogenerado |
+
+## Configuración y ejecución local
+
+Requisitos: Node.js 18 o superior.
+
+```bash
+npm install
+npm run dev     # desarrollo con nodemon
+# o: npm start
+```
+
+El servidor queda en `http://localhost:3000`. Variables en `.env`:
+
+```
+PORT=3000
+DB_FILE=./data/app.db
+```
+
+Al iniciar, `src/db/database.js` crea el archivo SQLite y ejecuta `src/db/schema.sql` (idempotente) para generar la tabla `mascotas`.
+
+## Arquitectura por capas
+
+```
+src/
+├── app.js                               # Express, middlewares, manejo central de errores
+├── errors.js                            # ValidationError y NotFoundError
+├── db/
+│   ├── database.js                      # Conexión centralizada a SQLite + inicialización
+│   └── schema.sql                       # Script de creación de tablas
+├── routes/mascotas.routes.js            # Endpoints expuestos
+├── controllers/mascotas.controller.js   # HTTP: req/res y códigos de estado
+├── services/mascotas.service.js         # Reglas de negocio y validaciones
+└── repositories/mascotas.repository.js  # SQL parametrizado
+```
+
+Flujo: **Ruta -> Controlador -> Servicio -> Repositorio -> SQLite**. Las validaciones ocurren en el servicio, antes de tocar la base de datos. Los errores de dominio se traducen a HTTP en un único middleware.
+
+## API REST
+
+| Operación | Método | Endpoint | Códigos |
+|---|---|---|---|
+| Listar todas | GET | `/api/mascotas` | 200 |
+| Consultar por ID | GET | `/api/mascotas/:id` | 200 / 404 |
+| Crear | POST | `/api/mascotas` | 201 / 400 |
+| Actualizar | PUT | `/api/mascotas/:id` | 200 / 400 / 404 |
+| Eliminar | DELETE | `/api/mascotas/:id` | 204 / 404 |
+
+## Evidencia de pruebas (cURL)
+
+Pruebas ejecutadas localmente sobre una base de datos nueva. Los tres escenarios clave son el 1 (camino feliz, 201), el 2 (validación, 400) y el 3 (no encontrado, 404).
+
+```text
+### 1. Camino feliz - POST crear mascota (201 Created)
+$ curl -i -X POST http://localhost:3000/api/mascotas -H 'Content-Type: application/json' -d '{"nombre":"Max","especie":"perro","raza":"Labrador","fecha_nacimiento":"2021-03-15","peso_kg":28.5}'
+HTTP/1.1 201 Created
+Content-Type: application/json; charset=utf-8
+
+{"id":1,"nombre":"Max","especie":"perro","raza":"Labrador","fecha_nacimiento":"2021-03-15","peso_kg":28.5,"creado_en":"2026-10-22 23:48:56"}
+
+
+### 2. Validacion - POST con datos incompletos (400 Bad Request)
+$ curl -i -X POST http://localhost:3000/api/mascotas -H 'Content-Type: application/json' -d '{"raza":"Criollo","peso_kg":-3}'
+HTTP/1.1 400 Bad Request
+Content-Type: application/json; charset=utf-8
+
+{"error":"Datos inválidos","detalles":["nombre es obligatorio (entre 2 y 50 caracteres)","especie es obligatoria y debe ser una de: perro, gato, ave, conejo, hamster, pez, reptil, otro","peso_kg debe ser un número mayor a 0 y máximo 200"]}
+
+
+### 3. Recurso no encontrado - GET id inexistente (404 Not Found)
+$ curl -i http://localhost:3000/api/mascotas/999
+HTTP/1.1 404 Not Found
+Content-Type: application/json; charset=utf-8
+
+{"error":"No existe una mascota con id 999"}
+
+
+### 4. Listar todos (200 OK)
+$ curl -i http://localhost:3000/api/mascotas
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+
+[{"id":1,"nombre":"Max","especie":"perro","raza":"Labrador","fecha_nacimiento":"2021-03-15","peso_kg":28.5,"creado_en":"2026-10-22 23:48:56"},{"id":2,"nombre":"Luna","especie":"gato","raza":null,"fecha_nacimiento":null,"peso_kg":null,"creado_en":"2026-10-22 23:48:57"}]
+
+
+### 5. Consultar por ID (200 OK)
+$ curl -i http://localhost:3000/api/mascotas/1
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+
+{"id":1,"nombre":"Max","especie":"perro","raza":"Labrador","fecha_nacimiento":"2021-03-15","peso_kg":28.5,"creado_en":"2026-10-22 23:48:56"}
+
+
+### 6. Actualizar con PUT (200 OK)
+$ curl -i -X PUT http://localhost:3000/api/mascotas/1 -H 'Content-Type: application/json' -d '{"nombre":"Max","especie":"perro","raza":"Labrador","fecha_nacimiento":"2021-03-15","peso_kg":30}'
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+
+{"id":1,"nombre":"Max","especie":"perro","raza":"Labrador","fecha_nacimiento":"2021-03-15","peso_kg":30,"creado_en":"2026-10-22 23:48:56"}
+
+
+### 7. PUT sobre id inexistente (404 Not Found)
+$ curl -i -X PUT http://localhost:3000/api/mascotas/999 -H 'Content-Type: application/json' -d '{"nombre":"Zeus","especie":"perro"}'
+HTTP/1.1 404 Not Found
+Content-Type: application/json; charset=utf-8
+
+{"error":"No existe una mascota con id 999"}
+
+
+### 8. Eliminar con DELETE (204 No Content)
+$ curl -i -X DELETE http://localhost:3000/api/mascotas/2
+HTTP/1.1 204 No Content
+
+
+### 9. DELETE repetido (404 Not Found)
+$ curl -i -X DELETE http://localhost:3000/api/mascotas/2
+HTTP/1.1 404 Not Found
+Content-Type: application/json; charset=utf-8
+
+{"error":"No existe una mascota con id 2"}
+
+
+### 10. JSON mal formado (400 Bad Request)
+$ curl -i -X POST http://localhost:3000/api/mascotas -H 'Content-Type: application/json' -d '{nombre:'
+HTTP/1.1 400 Bad Request
+Content-Type: application/json; charset=utf-8
+
+{"error":"JSON mal formado"}
+```
